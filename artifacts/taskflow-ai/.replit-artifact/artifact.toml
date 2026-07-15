@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "TaskFlow AI"
+version = "1.0.0"
+id = "artifacts/taskflow-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18809
+
+[services.development]
+run = "pnpm --filter @workspace/taskflow-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/taskflow-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/taskflow-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18809"
+BASE_PATH = "/"

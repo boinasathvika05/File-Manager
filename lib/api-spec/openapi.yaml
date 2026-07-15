@@ -3,20 +3,32 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: TaskFlow AI API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: Auth
+    description: Browser and mobile authentication endpoints.
+  - name: tasks
+    description: Task management
+  - name: categories
+    description: Category management
+  - name: dashboard
+    description: Dashboard & analytics
+  - name: gamification
+    description: XP, streaks, achievements
+  - name: history
+    description: Activity history
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,7 +36,540 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the currently authenticated user
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '200':
+          description: Auth status resolved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserEnvelope'
+
+  /login:
+    get:
+      tags: [Auth]
+      operationId: beginBrowserLogin
+      summary: Start the browser OIDC login flow
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the OIDC authorization endpoint.
+
+  /callback:
+    get:
+      tags: [Auth]
+      operationId: handleBrowserLoginCallback
+      summary: Complete the browser OIDC login flow
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: iss
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to returnTo path on success.
+
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: Clear the session and begin OIDC logout
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+            default: /
+      responses:
+        '302':
+          description: Redirect to OIDC logout endpoint.
+
+  /mobile-auth/token-exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeMobileAuthorizationCode
+      summary: Exchange a mobile OIDC code for a session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileTokenExchangeRequest'
+      responses:
+        '200':
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileTokenExchangeSuccess'
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Token invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /mobile-auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutMobileSession
+      summary: Delete a mobile session token
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+      responses:
+        '200':
+          description: Logout processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutSuccess'
+
+  # ── Tasks ─────────────────────────────────────────────────────────────────
+  /tasks:
+    get:
+      tags: [tasks]
+      operationId: listTasks
+      summary: List tasks with filters
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, in_progress, completed, archived]
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low, medium, high, urgent]
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+        - name: isFavorite
+          in: query
+          required: false
+          schema:
+            type: ["boolean", "null"]
+        - name: isArchived
+          in: query
+          required: false
+          schema:
+            type: ["boolean", "null"]
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: ["string", "null"]
+        - name: filter
+          in: query
+          required: false
+          description: "Shorthand filter: today, tomorrow, week, month, overdue, upcoming"
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      tags: [tasks]
+      operationId: createTask
+      summary: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /tasks/{id}:
+    get:
+      tags: [tasks]
+      operationId: getTask
+      summary: Get a single task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      tags: [tasks]
+      operationId: updateTask
+      summary: Update a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      tags: [tasks]
+      operationId: deleteTask
+      summary: Delete a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /tasks/{id}/duplicate:
+    post:
+      tags: [tasks]
+      operationId: duplicateTask
+      summary: Duplicate a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Duplicated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  # ── Categories ────────────────────────────────────────────────────────────
+  /categories:
+    get:
+      tags: [categories]
+      operationId: listCategories
+      summary: List all categories for current user
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+    post:
+      tags: [categories]
+      operationId: createCategory
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "201":
+          description: Created category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /categories/{id}:
+    patch:
+      tags: [categories]
+      operationId: updateCategory
+      summary: Update a category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryUpdate"
+      responses:
+        "200":
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      tags: [categories]
+      operationId: deleteCategory
+      summary: Delete a category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  # ── Dashboard ─────────────────────────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      tags: [dashboard]
+      operationId: getDashboardStats
+      summary: Get productivity overview stats
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/activity:
+    get:
+      tags: [dashboard]
+      operationId: getDashboardActivity
+      summary: Get recent activity feed
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Recent activity items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/weekly-progress:
+    get:
+      tags: [dashboard]
+      operationId: getWeeklyProgress
+      summary: Get weekly task completion data for charts
+      responses:
+        "200":
+          description: Weekly progress data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DayProgress"
+
+  /dashboard/monthly-progress:
+    get:
+      tags: [dashboard]
+      operationId: getMonthlyProgress
+      summary: Get monthly completion heatmap data
+      responses:
+        "200":
+          description: Monthly progress data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DayProgress"
+
+  # ── Gamification ──────────────────────────────────────────────────────────
+  /gamification/profile:
+    get:
+      tags: [gamification]
+      operationId: getGamificationProfile
+      summary: Get the user's XP, level, and streak info
+      responses:
+        "200":
+          description: Gamification profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GamificationProfile"
+
+  /gamification/achievements:
+    get:
+      tags: [gamification]
+      operationId: listAchievements
+      summary: List all achievements with unlock status
+      responses:
+        "200":
+          description: Achievements list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Achievement"
+
+  # ── History ───────────────────────────────────────────────────────────────
+  /history:
+    get:
+      tags: [history]
+      operationId: listHistory
+      summary: Get task activity history
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: History items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoryItem"
+
 components:
+  parameters:
+    AuthorizationSessionHeader:
+      name: Authorization
+      in: header
+      required: false
+      description: Opaque session token — `Bearer <sid>`.
+      schema:
+        type: string
+    SessionCookie:
+      name: sid
+      in: cookie
+      required: false
+      description: Browser session cookie.
+      schema:
+        type: string
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +579,484 @@ components:
       required:
         - status
 
+    # ── Auth schemas ────────────────────────────────────────────────────────
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id:
+          type: string
+        email:
+          type: ["string", "null"]
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+    AuthUserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/AuthUser'
+            - type: 'null'
+    MobileTokenExchangeRequest:
+      type: object
+      required: [code, code_verifier, redirect_uri, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        code_verifier:
+          type: string
+          minLength: 1
+        redirect_uri:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+    MobileTokenExchangeSuccess:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    LogoutSuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          const: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    # ── Task schemas ────────────────────────────────────────────────────────
+    SubtaskItem:
+      type: object
+      required: [id, title, completed]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        completed:
+          type: boolean
+
+    ChecklistItem:
+      type: object
+      required: [id, text, completed]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        completed:
+          type: boolean
+
+    Task:
+      type: object
+      required:
+        - id
+        - userId
+        - title
+        - status
+        - priority
+        - isFavorite
+        - isArchived
+        - isPinned
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, in_progress, completed, archived]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        categoryId:
+          type: ["integer", "null"]
+        categoryName:
+          type: ["string", "null"]
+        categoryColor:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        dueDate:
+          type: ["string", "null"]
+          format: date
+        dueTime:
+          type: ["string", "null"]
+        estimatedMinutes:
+          type: ["integer", "null"]
+        actualMinutes:
+          type: ["integer", "null"]
+        difficulty:
+          type: ["string", "null"]
+          enum: [easy, medium, hard, null]
+        energyLevel:
+          type: ["string", "null"]
+          enum: [low, medium, high, null]
+        color:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtaskItem"
+        checklistItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistItem"
+        isFavorite:
+          type: boolean
+        isArchived:
+          type: boolean
+        isPinned:
+          type: boolean
+        recurringRule:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, in_progress, completed, archived]
+          default: pending
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+          default: medium
+        categoryId:
+          type: ["integer", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        dueDate:
+          type: ["string", "null"]
+          format: date
+        dueTime:
+          type: ["string", "null"]
+        estimatedMinutes:
+          type: ["integer", "null"]
+        difficulty:
+          type: ["string", "null"]
+          enum: [easy, medium, hard, null]
+        energyLevel:
+          type: ["string", "null"]
+          enum: [low, medium, high, null]
+        color:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtaskItem"
+        checklistItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistItem"
+        isFavorite:
+          type: boolean
+          default: false
+        isPinned:
+          type: boolean
+          default: false
+        recurringRule:
+          type: ["string", "null"]
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, in_progress, completed, archived]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        categoryId:
+          type: ["integer", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        dueDate:
+          type: ["string", "null"]
+          format: date
+        dueTime:
+          type: ["string", "null"]
+        estimatedMinutes:
+          type: ["integer", "null"]
+        actualMinutes:
+          type: ["integer", "null"]
+        difficulty:
+          type: ["string", "null"]
+          enum: [easy, medium, hard, null]
+        energyLevel:
+          type: ["string", "null"]
+          enum: [low, medium, high, null]
+        color:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtaskItem"
+        checklistItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistItem"
+        isFavorite:
+          type: boolean
+        isArchived:
+          type: boolean
+        isPinned:
+          type: boolean
+        recurringRule:
+          type: ["string", "null"]
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    # ── Category schemas ────────────────────────────────────────────────────
+    Category:
+      type: object
+      required: [id, userId, name, color, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        icon:
+          type: ["string", "null"]
+        taskCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CategoryInput:
+      type: object
+      required: [name, color]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+          minLength: 1
+        icon:
+          type: ["string", "null"]
+
+    CategoryUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+          minLength: 1
+        icon:
+          type: ["string", "null"]
+
+    # ── Dashboard schemas ────────────────────────────────────────────────────
+    DashboardStats:
+      type: object
+      required:
+        - totalTasks
+        - completedToday
+        - pendingTasks
+        - overdueTasks
+        - completionRate
+        - currentStreak
+        - longestStreak
+        - totalXp
+        - level
+        - tasksCompletedThisWeek
+        - tasksCompletedThisMonth
+        - productivityScore
+        - motivationalQuote
+      properties:
+        totalTasks:
+          type: integer
+        completedToday:
+          type: integer
+        pendingTasks:
+          type: integer
+        overdueTasks:
+          type: integer
+        completionRate:
+          type: number
+        currentStreak:
+          type: integer
+        longestStreak:
+          type: integer
+        totalXp:
+          type: integer
+        level:
+          type: integer
+        tasksCompletedThisWeek:
+          type: integer
+        tasksCompletedThisMonth:
+          type: integer
+        productivityScore:
+          type: number
+        motivationalQuote:
+          type: string
+
+    ActivityItem:
+      type: object
+      required: [id, action, taskTitle, timestamp]
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+          enum: [created, completed, updated, deleted, archived, restored]
+        taskTitle:
+          type: string
+        taskId:
+          type: ["integer", "null"]
+        timestamp:
+          type: string
+          format: date-time
+
+    DayProgress:
+      type: object
+      required: [date, completed, total]
+      properties:
+        date:
+          type: string
+        completed:
+          type: integer
+        total:
+          type: integer
+
+    # ── Gamification schemas ─────────────────────────────────────────────────
+    GamificationProfile:
+      type: object
+      required:
+        - userId
+        - totalXp
+        - level
+        - levelName
+        - xpToNextLevel
+        - currentStreak
+        - longestStreak
+        - lastActiveDate
+        - unlockedAchievementsCount
+        - totalAchievementsCount
+      properties:
+        userId:
+          type: string
+        totalXp:
+          type: integer
+        level:
+          type: integer
+        levelName:
+          type: string
+        xpToNextLevel:
+          type: integer
+        currentStreak:
+          type: integer
+        longestStreak:
+          type: integer
+        lastActiveDate:
+          type: ["string", "null"]
+          format: date
+        unlockedAchievementsCount:
+          type: integer
+        totalAchievementsCount:
+          type: integer
+
+    Achievement:
+      type: object
+      required: [id, key, name, description, icon, xpReward, unlocked]
+      properties:
+        id:
+          type: integer
+        key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        icon:
+          type: string
+        xpReward:
+          type: integer
+        unlocked:
+          type: boolean
+        unlockedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    # ── History schemas ──────────────────────────────────────────────────────
+    HistoryItem:
+      type: object
+      required: [id, action, taskTitle, timestamp]
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+          enum: [created, completed, updated, deleted, archived, restored, login]
+        taskTitle:
+          type: string
+        taskId:
+          type: ["integer", "null"]
+        metadata:
+          type: ["string", "null"]
+        timestamp:
+          type: string
+          format: date-time
